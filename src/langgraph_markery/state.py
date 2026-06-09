@@ -16,6 +16,9 @@ class ResearchState(TypedDict):
     infer_result:            Parsed output from the last card --infer call:
                              {"recommendation", "score", "reasoning", "card_text"}.
     session_log:             Human-readable log lines appended by each node.
+    recommendation_override: When set by the caller on graph resume, human_gate
+                             uses this value instead of interrupting again.
+                             Expected: "confirm" or "reject". Cleared after use.
     """
 
     project: str
@@ -24,3 +27,4 @@ class ResearchState(TypedDict):
     current_slug: str | None
     infer_result: dict | None
     session_log: list[str]
+    recommendation_override: str | None

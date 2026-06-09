@@ -47,17 +47,51 @@ The workflow calls four Markery CLI commands:
 | `markery historian draft <project> <slug>` | `run_draft()` |
 | `markery matchmaker confirm <project> <slug>` | `run_confirm()` |
 
-## Running the graph (Phase 21 P2)
-
-The full LangGraph graph is implemented in `src/langgraph_markery/graph.py` (Phase 21 P2). Once available:
+## Running the graph
 
 ```bash
+export MARKERY_ROOT=/path/to/markery
 python -m langgraph_markery.graph <project>
 ```
 
-To resume after a `human_gate` interrupt, inject an override recommendation:
+The graph loads all unreviewed candidates for `<project>`, runs `historian card --infer` on each, and routes on the model's recommendation:
+
+- **confirm** → pauses at `human_gate` for approval, then calls `matchmaker confirm` and `historian draft`
+- **reject** → appends the candidate to `rejected.jsonl`
+- **defer** → logs the slug for later review (no file write)
+
+The graph runs until the candidate queue is empty. Confirmed slugs are printed at the end.
+
+### Human gate
+
+When the graph pauses at `human_gate`, the CLI prompts interactively. To drive the graph programmatically, build a graph with a persistent checkpointer and resume with an override:
 
 ```python
-from langgraph_markery.graph import app
-app.invoke({"recommendation_override": "confirm"}, config={"configurable": {"thread_id": "..."}})
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph_markery.graph import build_graph
+
+graph = build_graph(checkpointer=MemorySaver())
+thread = {"configurable": {"thread_id": "radio-pioneers-review"}}
+
+# Run until interrupt
+list(graph.stream(initial_state, config=thread))
+
+# Inspect the interrupted state
+snapshot = graph.get_state(thread)
+print(snapshot.values["infer_result"])
+
+# Resume with a human decision
+graph.update_state(thread, {"recommendation_override": "confirm"})
+list(graph.stream(None, config=thread))
 ```
+
+`recommendation_override` accepts `"confirm"` or `"reject"`. Any other value defaults to `"reject"`.
+
+## Running tests
+
+```bash
+cd markery-langgraph
+pytest
+```
+
+Tests use mocked tool calls — no live Markery CLI or `MARKERY_ROOT` required.
