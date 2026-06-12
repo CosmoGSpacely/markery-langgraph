@@ -13,11 +13,11 @@ from pathlib import Path
 
 MARKERY_ROOT: str = os.environ.get("MARKERY_ROOT", "")
 
-_EXPECTED_VERSION = "1.0"
+_EXPECTED_VERSION = "1.1"
 
 
 def check_contract(root: str | Path) -> None:
-    """Read MANIFEST.json from root and assert contract_version == '1.0'.
+    """Read MANIFEST.json from root and assert contract_version == '1.1'.
 
     Raises RuntimeError if the file is missing or the version does not match.
     Call this once at process startup before invoking any subprocess tools.

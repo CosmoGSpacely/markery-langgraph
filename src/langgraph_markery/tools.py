@@ -7,6 +7,7 @@ must be resolvable from the caller's environment.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from typing import Optional
@@ -26,42 +27,52 @@ def run_card_infer(
     slug: str,
     model: Optional[str] = None,
 ) -> dict:
-    """Run `markery historian card <project> <slug> --infer --out -`.
+    """Run `markery historian card <project> <slug> --infer --json --out -`.
 
     Returns a dict with keys:
-      card_text       str   — the full card markdown (before the [infer] block)
+      card_text       str   — the full card markdown
       recommendation  str   — "confirm", "reject", or "defer"
       score           int   — 1–5
       reasoning       str   — one to three sentences from the model
-    Falls back to recommendation="defer", score=3 if the [infer] block is absent
-    or unparseable (e.g. model quota exceeded).
+
+    Uses the v1.1 `--json` contract (MANIFEST.json): stdout is a single JSON
+    object, parsed directly. Falls back to the legacy stdout `[infer]`-block
+    regex scrape if JSON parsing fails (e.g. an older Markery without --json),
+    and to recommendation="defer", score=3 if neither yields a result.
     """
-    cmd = ["markery", "historian", "card", project, slug, "--infer", "--out", "-"]
+    cmd = ["markery", "historian", "card", project, slug, "--infer", "--json", "--out", "-"]
     if model:
         cmd += ["--model", model]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
-    stdout = result.stdout
+    stdout = result.stdout.strip()
 
-    # Split card text from the [infer] block.
-    # The historian CLI prints "\n[infer]  recommendation=X  score=Y\n         reasoning"
-    # to stdout after the card text.
+    # Preferred path (v1.1 contract): stdout is one JSON object.
+    try:
+        obj = json.loads(stdout)
+        return {
+            "card_text":      str(obj.get("card_text", "")).strip(),
+            "recommendation": str(obj.get("recommendation", "defer")).lower(),
+            "score":          int(obj.get("score", 3)),
+            "reasoning":      str(obj.get("reasoning", "")).strip(),
+        }
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    # Legacy fallback: scrape the human-readable [infer] block.
     infer_marker = "\n[infer]"
-    if infer_marker in stdout:
-        card_text, infer_block = stdout.split(infer_marker, 1)
+    if infer_marker in result.stdout:
+        card_text, infer_block = result.stdout.split(infer_marker, 1)
     else:
-        card_text = stdout
+        card_text = result.stdout
         infer_block = ""
-
     rec_m   = re.search(r'recommendation=(\w+)', infer_block)
     score_m = re.search(r'score=([1-5])', infer_block)
-    # Reasoning is on the second line of the infer block (indented with spaces)
     reason_lines = [
         ln.strip() for ln in infer_block.splitlines()
         if ln.strip() and not ln.strip().startswith("recommendation=")
     ]
     reasoning = " ".join(reason_lines).strip()
-
     return {
         "card_text":      card_text.strip(),
         "recommendation": rec_m.group(1).lower() if rec_m else "defer",
