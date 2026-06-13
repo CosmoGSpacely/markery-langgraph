@@ -19,6 +19,12 @@ class ResearchState(TypedDict):
     recommendation_override: When set by the caller on graph resume, human_gate
                              uses this value instead of interrupting again.
                              Expected: "confirm" or "reject". Cleared after use.
+    review_all:              When True, every recommendation (confirm, reject,
+                             defer) is routed through human_gate. Default False.
+    reject_review_floor:     A model `reject` with score >= this value is routed
+                             through human_gate (a human may overturn it); a
+                             reject below the floor is auto-written to
+                             rejected.jsonl. Default REJECT_REVIEW_FLOOR.
     """
 
     project: str
@@ -28,3 +34,5 @@ class ResearchState(TypedDict):
     infer_result: dict | None
     session_log: list[str]
     recommendation_override: str | None
+    review_all: bool
+    reject_review_floor: int

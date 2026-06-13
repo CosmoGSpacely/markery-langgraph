@@ -29,6 +29,11 @@ human_gate → write_confirmed | write_rejected (conditional on override)
 write_confirmed → pick_next
 write_rejected  → pick_next
 append_defer    → pick_next
+
+route_infer surfaces a model `reject` at the human_gate when --review-all is set
+or the reject's score is at or above the reject-review floor (default 3), so a
+human can overturn a confident-looking machine reject (the Phase 22 P5 bulldog
+case). Below the floor, rejects are auto-written without interrupting.
 """
 
 from __future__ import annotations
@@ -229,11 +234,31 @@ def append_defer(state: ResearchState) -> ResearchState:
 # ---------------------------------------------------------------------------
 
 def _route_infer(state: ResearchState) -> Literal["human_gate", "write_rejected", "append_defer"]:
-    rec = (state.get("infer_result") or {}).get("recommendation", "defer")
+    """Route a model recommendation to the human gate or a terminal write.
+
+    confirm → always human_gate (a human approves every confirm).
+    reject  → human_gate when ``review_all`` is set or the reject's score is at
+              or above ``reject_review_floor`` (a confident-looking reject worth
+              a human override, e.g. the P5 bulldog); otherwise auto-reject.
+    defer   → human_gate when ``review_all`` is set; otherwise append_defer.
+    """
+    infer = state.get("infer_result") or {}
+    rec = infer.get("recommendation", "defer")
+    review_all = bool(state.get("review_all"))
+    floor = state.get("reject_review_floor")
+    if floor is None:
+        floor = config.REJECT_REVIEW_FLOOR
+
     if rec == "confirm":
         return "human_gate"
     if rec == "reject":
+        score = infer.get("score", 0) or 0
+        if review_all or score >= floor:
+            return "human_gate"
         return "write_rejected"
+    # defer
+    if review_all:
+        return "human_gate"
     return "append_defer"
 
 
@@ -297,16 +322,30 @@ app = None  # Populated lazily so import doesn't require MARKERY_ROOT
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    import argparse
     import sys
-    if len(sys.argv) < 2:
-        print("Usage: python -m langgraph_markery.graph <project>", file=sys.stderr)
-        sys.exit(1)
 
-    project = sys.argv[1]
-    root = os.environ.get("MARKERY_ROOT", "")
+    parser = argparse.ArgumentParser(
+        prog="python -m langgraph_markery.graph",
+        description="Run the Markery LangGraph review workflow for a project.",
+    )
+    parser.add_argument("project", help="Markery project name (directory under projects/)")
+    parser.add_argument("--review-all", action="store_true",
+                        help="Surface every recommendation (confirm, reject, defer) at the human gate")
+    parser.add_argument("--reject-floor", type=int, default=config.REJECT_REVIEW_FLOOR,
+                        metavar="N",
+                        help=f"Surface a model reject at the human gate when its score is >= N "
+                             f"(default: {config.REJECT_REVIEW_FLOOR}); rejects below N auto-reject")
+    args = parser.parse_args()
+
+    project = args.project
+    root = config.resolve_markery_root()
     if not root:
-        print("MARKERY_ROOT environment variable is not set.", file=sys.stderr)
+        print("MARKERY_ROOT is not set and no Markery repo could be auto-resolved.\n"
+              "Set MARKERY_ROOT, add a .markery-root pointer file, or place this repo "
+              "next to a sibling 'markery/' directory.", file=sys.stderr)
         sys.exit(1)
+    config.MARKERY_ROOT = root
     config.check_contract(root)
 
     graph = build_graph()
@@ -319,6 +358,8 @@ def main() -> None:
         "infer_result": None,
         "session_log": [],
         "recommendation_override": None,
+        "review_all": args.review_all,
+        "reject_review_floor": args.reject_floor,
     }
 
     for chunk in graph.stream(initial, config=thread):
