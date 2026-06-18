@@ -55,14 +55,29 @@ floor are auto-written to `rejected.jsonl`. Use `--review-all` to review every
 recommendation — the mode that would have surfaced the Phase 22 P5 Mack bulldog
 reject (score 1) for human override.
 
+## Isolated environment
+
+This repo runs in its own `.venv`, independent of the Markery venv (it never
+imports `markery` as a library — it only shells out to the `markery` CLI). The
+stdlib `python -m venv` cannot be used on this host (`ensurepip` /
+`python3.12-venv` unavailable, `sudo` blocked), so create the env with
+`virtualenv`, which bundles its own pip:
+
+```bash
+python3 -m virtualenv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+```
+
+Always invoke through the env (`.venv/bin/python`, `.venv/bin/pytest`) or activate it first.
+
 ## Running tests
 
 ```bash
 cd markery-langgraph
-pytest
+.venv/bin/pytest
 ```
 
-Tests use mocked tool calls — no live Markery CLI required. `MARKERY_ROOT` is not needed for the test suite.
+Tests use mocked tool calls — no live Markery CLI required. `MARKERY_ROOT` is not needed for the test suite. The 30-test suite runs entirely from the isolated `.venv`.
 
 ---
 

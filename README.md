@@ -12,15 +12,30 @@ Automates the candidate review cycle: loads the project queue, runs `historian c
 
 ## Setup
 
+This repo runs in its **own isolated virtual environment**, independent of the
+Markery venv — nothing here imports `markery` as a library; it only shells out to
+the `markery` CLI. Create the environment with `virtualenv`, which bundles its own
+pip (the stdlib `python -m venv` cannot be used on this host: `ensurepip` /
+`python3.12-venv` is unavailable and installing it needs `sudo`).
+
 ```bash
-# Clone alongside the Markery repo
+# Clone alongside the Markery repo (the sibling layout lets MARKERY_ROOT auto-resolve)
 git clone https://github.com/CosmoGSpacely/markery-langgraph.git
 cd markery-langgraph
-pip install -e .
 
-# Set the Markery root
-export MARKERY_ROOT=/path/to/markery
+# Create the isolated env with virtualenv (bundles pip; works without ensurepip)
+python3 -m pip install --user virtualenv     # once, if virtualenv is not present
+python3 -m virtualenv .venv
+.venv/bin/python -m pip install -e '.[dev]'
 ```
+
+`MARKERY_ROOT` no longer has to be exported — `config.resolve_markery_root()`
+finds the sibling `markery/` directory automatically (see "Markery root
+resolution" below). An explicit `export MARKERY_ROOT=/path/to/markery` still works
+and takes precedence.
+
+Run everything through the env's interpreter (`.venv/bin/python`, `.venv/bin/pytest`)
+or `source .venv/bin/activate` first.
 
 ## Contract check
 
@@ -34,7 +49,7 @@ print('Contract OK')
 "
 ```
 
-This reads `MANIFEST.json` from `MARKERY_ROOT` and asserts `contract_version == "1.0"`. If the version does not match, update either this package or Markery before proceeding.
+This reads `MANIFEST.json` from `MARKERY_ROOT` and asserts `contract_version == "1.1"`. If the version does not match, update either this package or Markery before proceeding.
 
 ## Subprocess interface
 
@@ -87,11 +102,22 @@ list(graph.stream(None, config=thread))
 
 `recommendation_override` accepts `"confirm"` or `"reject"`. Any other value defaults to `"reject"`.
 
+## Markery root resolution
+
+`config.resolve_markery_root()` resolves the Markery repo root in this order
+(first hit with a `MANIFEST.json` wins):
+
+1. the `MARKERY_ROOT` environment variable, if set;
+2. a `.markery-root` pointer file in this repo root (first non-comment line is the
+   path; relative paths resolve against the repo root);
+3. a sibling `markery/` directory next to this repo.
+
 ## Running tests
 
 ```bash
 cd markery-langgraph
-pytest
+.venv/bin/pytest        # or: source .venv/bin/activate && pytest
 ```
 
 Tests use mocked tool calls — no live Markery CLI or `MARKERY_ROOT` required.
+The 30-test suite runs entirely from the isolated `.venv`.
