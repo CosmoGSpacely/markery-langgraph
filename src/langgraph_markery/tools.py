@@ -109,3 +109,79 @@ def run_draft(project: str, slug: str) -> tuple[str, bool]:
     )
     validate_passed = result.returncode == 0
     return result.stdout + result.stderr, validate_passed
+
+
+# ---------------------------------------------------------------------------
+# Discovery loop (Phase 30 — contract v1.2)
+# ---------------------------------------------------------------------------
+
+def run_discovery_status() -> dict:
+    """Return the discovery on/off state (markery historian discovery status --json)."""
+    result = subprocess.run(
+        ["markery", "historian", "discovery", "status", "--json"],
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def run_books(query: str, max_results: int = 10) -> list[dict]:
+    """Discover books via `markery librarian books <query> --json`.
+
+    Returns a list of {title, author, year, isbn, action, ia_id, worldcat_url,
+    ill_request}."""
+    result = subprocess.run(
+        ["markery", "librarian", "books", query, "--max-results", str(max_results), "--json"],
+        capture_output=True, text=True, check=True,
+    )
+    out = result.stdout.strip()
+    return json.loads(out.splitlines()[-1]) if out else []
+
+
+def run_relevance(project: str, title: str, text: str = "") -> dict:
+    """Score relevance via `markery historian relevance ... --json` → {score, reasoning}."""
+    cmd = ["markery", "historian", "relevance", project, "--title", title, "--json"]
+    if text:
+        cmd += ["--text", text]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def run_acquire_text(ia_id: str) -> bool:
+    """Acquire free full text from IA into library/works. True if it succeeded."""
+    result = subprocess.run(
+        ["markery", "librarian", "acquire", ia_id, "--source", "ia"],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
+def run_wants_add(title: str, author: str = "", year: Optional[int] = None,
+                  isbn: Optional[str] = None, ill_request: str = "") -> None:
+    """Queue one ILL want (markery librarian wants-add)."""
+    cmd = ["markery", "librarian", "wants-add", "--title", title]
+    if author:
+        cmd += ["--author", author]
+    if year:
+        cmd += ["--year", str(year)]
+    if isbn:
+        cmd += ["--isbn", isbn]
+    if ill_request:
+        cmd += ["--ill-request", ill_request]
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+
+def run_leads_add(source: str, source_id: str, *, title: str = "", project: str = "",
+                  relevance: Optional[int] = None, status: str = "logged",
+                  note: str = "") -> None:
+    """Log a discovery lead (markery librarian leads-add)."""
+    cmd = ["markery", "librarian", "leads-add", "--source", source, "--id", source_id,
+           "--status", status]
+    if title:
+        cmd += ["--title", title]
+    if project:
+        cmd += ["--project", project]
+    if relevance is not None:
+        cmd += ["--relevance", str(relevance)]
+    if note:
+        cmd += ["--note", note]
+    subprocess.run(cmd, capture_output=True, text=True, check=True)

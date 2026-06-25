@@ -16,13 +16,27 @@ This file governs all Claude Code sessions in this repository.
 
 ```
 src/langgraph_markery/
-  config.py    — MARKERY_ROOT resolution, check_contract()
-  state.py     — ResearchState TypedDict
-  tools.py     — subprocess wrappers (run_digest, run_card_infer, run_confirm, run_draft)
-  graph.py     — LangGraph workflow graph (nodes, edges, human_gate interrupt)
+  config.py            — MARKERY_ROOT resolution, check_contract() (contract v1.2)
+  state.py             — ResearchState TypedDict (candidate-review graph)
+  tools.py             — subprocess wrappers (review + discovery commands)
+  graph.py             — candidate-review graph (confirm/reject/defer + human_gate)
+  discovery_state.py   — DiscoveryState TypedDict (discovery loop)
+  discovery_graph.py   — Phase 30 discovery loop + runner main()
 tests/
-  test_graph.py  — integration tests with mocked tool calls
+  test_graph.py            — review-graph integration tests (mocked tools)
+  test_discovery_graph.py  — discovery-loop tests (mocked tools)
 ```
+
+Two graphs, both shelling the Markery CLI (never importing markery):
+- **Candidate review** (`graph.py`) — the original confirm/reject/defer workflow.
+- **Discovery loop** (`discovery_graph.py`, Phase 30) — load_seed → discover →
+  score → route: relevant+free → acquire_free; relevant+ILL → human_gate →
+  queue_ill/drop; irrelevant → log_dropped. The **auto-acquire-free /
+  gate-everything-else** boundary: free PD full text is acquired automatically;
+  ILL (cost/commitment) interrupts for a human; every candidate is logged as a
+  lead. Runs as a **persistent service the user toggles** via
+  `markery historian discovery {on|off|status}` (a `library/discovery_state.json`
+  flag the runner reads each tick).
 
 ---
 
@@ -81,6 +95,24 @@ Tests use mocked tool calls — no live Markery CLI required. `MARKERY_ROOT` is 
 
 ---
 
+## Running the discovery loop (Phase 30)
+
+The loop only acts while enabled (toggle lives in Markery):
+
+```bash
+markery historian discovery on               # in the Markery repo
+.venv/bin/python -m langgraph_markery.discovery_graph   # one tick per scoped project
+markery historian discovery off
+```
+
+A scheduler (cron) or a sleep-loop invokes the runner; each invocation is one
+discovery tick that no-ops when the flag is off. Free PD acquisitions land
+automatically; ILL candidates pause at `human_gate` for a queue/skip decision.
+
 ## Subprocess interface contract
 
-This repo calls four Markery CLI commands declared in `$MARKERY_ROOT/MANIFEST.json`. Bump `contract_version` in `MANIFEST.json` whenever a command signature or output format changes, then update `check_contract()` in `config.py` to assert the new version.
+This repo calls the Markery CLI commands declared in `$MARKERY_ROOT/MANIFEST.json`
+(**contract v1.2** — review commands + the Phase 30 discovery surface: historian
+relevance/discovery, librarian books/media-acquire/acquire/use/leads-add/wants-add).
+Bump `contract_version` in `MANIFEST.json` whenever a command signature or output
+format changes, then update `_EXPECTED_VERSION` in `config.py` to match.
