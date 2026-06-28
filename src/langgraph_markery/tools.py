@@ -137,6 +137,52 @@ def run_books(query: str, max_results: int = 10) -> list[dict]:
     return json.loads(out.splitlines()[-1]) if out else []
 
 
+def run_media_search(query: str, source: str = "commons",
+                     max_results: int = 10) -> list[dict]:
+    """Search a PD-media source (markery librarian media-search --json).
+
+    Returns [{source, id}]. Returns [] on any failure (missing key, network) so
+    one source's outage never breaks the discovery tick."""
+    try:
+        result = subprocess.run(
+            ["markery", "librarian", "media-search", query, "--source", source,
+             "--max-results", str(max_results), "--json"],
+            capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError:
+        return []
+    out = result.stdout.strip()
+    try:
+        return json.loads(out.splitlines()[-1]) if out else []
+    except json.JSONDecodeError:
+        return []
+
+
+def run_media_acquire(source: str, identifier: str, fair_use: bool = True) -> dict:
+    """Acquire one media item (markery librarian media-acquire --json [--fair-use]).
+
+    Returns {acquired: bool, slug?, license?, ...}. fair_use defaults True per the
+    permissive non-commercial media policy."""
+    cmd = ["markery", "librarian", "media-acquire", identifier, "--source", source, "--json"]
+    if fair_use:
+        cmd.append("--fair-use")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    out = result.stdout.strip()
+    try:
+        return json.loads(out.splitlines()[-1]) if out else {"acquired": False}
+    except (json.JSONDecodeError, IndexError):
+        return {"acquired": False}
+
+
+def run_use(slug: str, project: str) -> bool:
+    """Reference a global library item from a project (markery librarian use)."""
+    result = subprocess.run(
+        ["markery", "librarian", "use", slug, "--project", project],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
 def run_relevance(project: str, title: str, text: str = "") -> dict:
     """Score relevance via `markery historian relevance ... --json` → {score, reasoning}."""
     cmd = ["markery", "historian", "relevance", project, "--title", title, "--json"]

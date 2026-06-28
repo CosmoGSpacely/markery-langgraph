@@ -37,6 +37,10 @@ def _patches(**extra):
         "run_acquire_text": MagicMock(return_value=True),
         "run_wants_add": MagicMock(),
         "run_leads_add": MagicMock(),
+        # Media tools default to no-ops so book-focused tests stay hermetic.
+        "run_media_search": MagicMock(return_value=[]),
+        "run_media_acquire": MagicMock(return_value={"acquired": False}),
+        "run_use": MagicMock(return_value=True),
     }
     base.update(extra)
     return base
@@ -69,6 +73,35 @@ def test_full_tick_acquire_gate_drop(tmp_path):
     mocks["run_wants_add"].assert_called_once()
     # Acquire Low was dropped (below floor), not acquired.
     assert mocks["run_acquire_text"].call_count == 1
+
+
+def test_media_branch_acquires_and_uses(tmp_path):
+    """A PD/fair-use media hit is auto-acquired and referenced into the project."""
+    mocks = _patches(
+        run_books=MagicMock(return_value=[]),   # media-only tick
+        run_relevance=MagicMock(return_value={"score": 5, "reasoning": "on-topic"}),
+        run_media_search=MagicMock(side_effect=lambda q, source, max_results=10: (
+            [{"source": source, "id": f"{source}-1"}] if source == "commons" else [])),
+        run_media_acquire=MagicMock(return_value={
+            "acquired": True, "slug": "commons-logo", "license": "InC", "source": "commons"}),
+    )
+    graph = build_graph(MemorySaver())
+    thread = {"configurable": {"thread_id": "disc-media"}}
+    with (
+        patch("langgraph_markery.discovery_graph.config.resolve_markery_root",
+              return_value=str(tmp_path)),
+        patch.multiple("langgraph_markery.discovery_graph.tools", **mocks),
+    ):
+        list(graph.stream(
+            initial_state("tools", relevance_floor=3, media_sources=["commons"]),
+            config=thread))
+
+    final = graph.get_state(thread).values
+    assert final["acquired"] == 1                       # the media item acquired
+    mocks["run_media_acquire"].assert_called_once_with("commons", "commons-1", fair_use=True)
+    mocks["run_use"].assert_called_once_with("commons-logo", "tools")
+    # logged as a lead under its source
+    assert mocks["run_leads_add"].call_args.args[0] == "commons"
 
 
 def test_ill_skip_drops_instead_of_queue(tmp_path):

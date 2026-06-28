@@ -10,9 +10,12 @@ class DiscoveryState(TypedDict):
 
     project:            Markery project discovery runs for.
     seeds:              Search queries (derived from the project's entities).
-    candidates:         Discovered book candidates (from `librarian books --json`):
-                        {title, author, year, isbn, action, ia_id, worldcat_url,
-                         ill_request, ...}.
+    candidates:         Discovered candidates, each tagged with `type`:
+                        - book  (from `librarian books --json`): {title, author,
+                          year, isbn, action, ia_id, worldcat_url, ill_request}.
+                        - media (from `librarian media-search --json`): {source,
+                          id, title, query, action="acquire"} — PD/fair-use images.
+    media_sources:      PD-media sources to search per seed (commons/loc/nara/ia/...).
     current:            Candidate under consideration this cycle (with `score`).
     relevance_floor:    Score (1-5) at/above which a candidate is acted on.
     decision_override:  Set on graph resume after human_gate: "queue" | "skip".
@@ -23,6 +26,7 @@ class DiscoveryState(TypedDict):
 
     project: str
     seeds: list[str]
+    media_sources: list[str]
     candidates: list[dict]
     current: dict | None
     relevance_floor: int

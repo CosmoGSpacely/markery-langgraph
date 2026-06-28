@@ -31,6 +31,11 @@ from langgraph_markery import config, tools
 from langgraph_markery.discovery_state import DiscoveryState
 
 _MAX_CANDIDATES = 25
+# Media discovery (permissive non-commercial fair-use policy): keyless, reliable
+# PD-media sources searched per seed; bounded so a tick stays cheap.
+_DEFAULT_MEDIA_SOURCES = ["commons", "loc", "nara", "ia"]
+_MEDIA_PER_SOURCE = 5
+_MAX_MEDIA = 25
 
 
 def _log(state: DiscoveryState, msg: str) -> None:
@@ -55,7 +60,10 @@ def load_seed(state: DiscoveryState) -> DiscoveryState:
 
 
 def discover(state: DiscoveryState) -> DiscoveryState:
-    """Search Open Library for each seed; collect candidates (deduped by title)."""
+    """Discover books (Open Library) and PD/fair-use media (media-search) per seed.
+
+    Books may be free (IA) or ILL-gated; media are auto-acquired under the
+    permissive non-commercial fair-use policy. Each candidate is tagged `type`."""
     seen: set[str] = set()
     candidates: list[dict] = []
     for seed in state["seeds"]:
@@ -63,11 +71,27 @@ def discover(state: DiscoveryState) -> DiscoveryState:
             key = (c.get("title") or "").lower().strip()
             if key and key not in seen:
                 seen.add(key)
+                c["type"] = "book"
                 candidates.append(c)
             if len(candidates) >= _MAX_CANDIDATES:
                 break
+
+    media_seen: set[tuple] = set()
+    media: list[dict] = []
+    for seed in state["seeds"]:
+        for src in state.get("media_sources", _DEFAULT_MEDIA_SOURCES):
+            for hit in tools.run_media_search(seed, source=src, max_results=_MEDIA_PER_SOURCE):
+                key = (hit["source"], hit["id"])
+                if key in media_seen:
+                    continue
+                media_seen.add(key)
+                media.append({"type": "media", "source": hit["source"], "id": hit["id"],
+                              "title": seed, "query": seed, "action": "acquire"})
+                if len(media) >= _MAX_MEDIA:
+                    break
+    candidates += media
     state["candidates"] = candidates
-    _log(state, f"discovered {len(candidates)} candidate(s)")
+    _log(state, f"discovered {len(candidates) - len(media)} book(s) + {len(media)} media")
     return state
 
 
@@ -91,6 +115,20 @@ def _lead_id(cur: dict) -> str:
 
 def acquire_free(state: DiscoveryState) -> DiscoveryState:
     cur = state["current"]
+    if cur.get("type") == "media":
+        res = tools.run_media_acquire(cur["source"], cur["id"], fair_use=True)
+        ok = bool(res.get("acquired"))
+        if ok and res.get("slug"):
+            tools.run_use(res["slug"], state["project"])   # → references/library.jsonl
+        tools.run_leads_add(cur["source"], cur["id"], title=cur.get("title", ""),
+                            project=state["project"], relevance=cur.get("score"),
+                            status="acquired" if ok else "logged",
+                            note=f"media {res.get('license', '')}".strip())
+        state["acquired"] += int(ok)
+        state["logged"] += 1
+        _log(state, f"{'acquired' if ok else 'acquire-failed'} media: "
+                    f"{cur['source']}/{cur['id']} [{res.get('license', '')}]")
+        return state
     ok = tools.run_acquire_text(cur["ia_id"])
     status = "acquired" if ok else "logged"
     tools.run_leads_add("openlibrary", _lead_id(cur), title=cur.get("title", ""),
@@ -200,9 +238,12 @@ def build_graph(checkpointer=None):
     return builder.compile(checkpointer=saver, interrupt_before=["human_gate"])
 
 
-def initial_state(project: str, relevance_floor: int = 3) -> DiscoveryState:
+def initial_state(project: str, relevance_floor: int = 3,
+                  media_sources: list[str] | None = None) -> DiscoveryState:
     return {
-        "project": project, "seeds": [], "candidates": [], "current": None,
+        "project": project, "seeds": [],
+        "media_sources": media_sources if media_sources is not None else list(_DEFAULT_MEDIA_SOURCES),
+        "candidates": [], "current": None,
         "relevance_floor": relevance_floor, "decision_override": None,
         "session_log": [], "acquired": 0, "queued": 0, "logged": 0,
     }
