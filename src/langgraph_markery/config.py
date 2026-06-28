@@ -13,7 +13,7 @@ from pathlib import Path
 
 MARKERY_ROOT: str = os.environ.get("MARKERY_ROOT", "")
 
-_EXPECTED_VERSION = "1.3"
+_EXPECTED_VERSION = "1.4"
 
 # A model `reject` whose score (1–5) is at or above this floor is surfaced to the
 # human_gate rather than auto-written to rejected.jsonl. Rejects below the floor

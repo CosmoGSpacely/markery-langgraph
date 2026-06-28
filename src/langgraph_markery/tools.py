@@ -231,3 +231,61 @@ def run_leads_add(source: str, source_id: str, *, title: str = "", project: str 
     if note:
         cmd += ["--note", note]
     subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+
+# ---------------------------------------------------------------------------
+# Spawn pipeline (Phase 32 P4 — contract v1.4)
+# ---------------------------------------------------------------------------
+
+def run_seed_pairs(years: list[int]) -> list[dict]:
+    """Scored mark↔patent seed pairs (markery matchmaker seed-pairs --years ... --json)."""
+    cmd = ["markery", "matchmaker", "seed-pairs", "--years"] + [str(y) for y in years] + ["--json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    out = result.stdout.strip()
+    try:
+        return json.loads(out.splitlines()[-1]) if out else []
+    except (json.JSONDecodeError, IndexError):
+        return []
+
+
+def run_project_init(slug: str, ptype: str = "match-review-essay") -> bool:
+    """Scaffold a project non-interactively (markery project init <slug> --type ...)."""
+    result = subprocess.run(
+        ["markery", "project", "init", slug, "--type", ptype],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
+def run_seed_project(slug: str, entity: str, industry: str = "") -> dict:
+    """Scaffold entity files from a seed entity (markery matchmaker seed-project --json)."""
+    cmd = ["markery", "matchmaker", "seed-project", slug, "--entity", entity, "--json"]
+    if industry:
+        cmd += ["--industry", industry]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    out = result.stdout.strip()
+    try:
+        return json.loads(out.splitlines()[-1]) if out else {}
+    except (json.JSONDecodeError, IndexError):
+        return {}
+
+
+def run_build_entities(slug: str) -> bool:
+    """Build the entity registry from a project's CSVs (markery matchmaker build --data-dir)."""
+    result = subprocess.run(
+        ["markery", "matchmaker", "build", "--data-dir", f"projects/{slug}"],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
+def run_match(slug: str) -> bool:
+    """Generate candidate pairs for a project (markery match <slug>)."""
+    result = subprocess.run(["markery", "match", slug], capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def run_site_build(slug: str) -> bool:
+    """Build a project's local site preview (markery site build <slug>)."""
+    result = subprocess.run(["markery", "site", "build", slug], capture_output=True, text=True)
+    return result.returncode == 0
