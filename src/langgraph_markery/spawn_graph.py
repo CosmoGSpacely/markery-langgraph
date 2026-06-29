@@ -227,8 +227,12 @@ def spawn_approved(state: SpawnState) -> SpawnState:
         if not tools.run_project_init(slug):
             _log(state, f"FAILED init: {slug}"); continue
         tools.run_seed_project(slug, c["entity"])
-        tools.run_build_entities(slug)
-        tools.run_match(slug)
+        # Guard: an unregistered entity → match yields 0 candidates → empty site.
+        if not tools.run_build_entities(slug):
+            state["rejected"].append(c["key"])
+            _log(state, f"FAILED build-entities (skipping): {slug}"); continue
+        if not tools.run_match(slug):
+            _log(state, f"WARN match non-zero: {slug}")
         disc = _discover_preview(state, slug, [c["entity"]])
         drafted = _auto_draft(state, slug, c["top_pairs"])
         built = tools.run_site_build(slug)

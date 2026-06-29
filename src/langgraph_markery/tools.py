@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from pathlib import Path
 from typing import Optional
+
+from langgraph_markery import config
 
 
 def run_digest(project: str) -> str:
@@ -288,9 +291,15 @@ def run_seed_project(slug: str, entity: str, industry: str = "") -> dict:
 
 
 def run_build_entities(slug: str) -> bool:
-    """Build the entity registry from a project's CSVs (markery matchmaker build --data-dir)."""
+    """Build the entity registry from a project's CSVs (markery matchmaker build --data-dir).
+
+    --data-dir is a literal path (not resolved via MARKERY_ROOT like other commands),
+    so it must be absolute — the subprocess cwd is not guaranteed to be the markery root.
+    """
+    root = config.resolve_markery_root() or config.MARKERY_ROOT
+    data_dir = str(Path(root) / "projects" / slug)
     result = subprocess.run(
-        ["markery", "matchmaker", "build", "--data-dir", f"projects/{slug}"],
+        ["markery", "matchmaker", "build", "--data-dir", data_dir],
         capture_output=True, text=True,
     )
     return result.returncode == 0
