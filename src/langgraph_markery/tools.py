@@ -184,12 +184,21 @@ def run_use(slug: str, project: str) -> bool:
 
 
 def run_relevance(project: str, title: str, text: str = "") -> dict:
-    """Score relevance via `markery historian relevance ... --json` → {score, reasoning}."""
+    """Score relevance via `markery historian relevance ... --json` → {score, reasoning}.
+
+    Degrades gracefully: a model outage (e.g. free-tier 429) returns
+    {"score": None, "error": ...} rather than raising, so an agentic loop never
+    crashes on a transient model failure. Callers treat a None score as 'unscored'."""
     cmd = ["markery", "historian", "relevance", project, "--title", title, "--json"]
     if text:
         cmd += ["--text", text]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return {"score": None, "error": (result.stderr or "")[-200:]}
+    try:
+        return json.loads(result.stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        return {"score": None, "error": "unparseable"}
 
 
 def run_acquire_text(ia_id: str) -> bool:
@@ -238,14 +247,22 @@ def run_leads_add(source: str, source_id: str, *, title: str = "", project: str 
 # ---------------------------------------------------------------------------
 
 def run_seed_pairs(years: list[int]) -> list[dict]:
-    """Scored mark↔patent seed pairs (markery matchmaker seed-pairs --years ... --json)."""
+    """Scored mark↔patent seed pairs (markery matchmaker seed-pairs --years ... --json).
+
+    seed-pairs --json emits pure (pretty, multi-line) JSON with no preamble, so the
+    whole stdout is parsed — not just the last line."""
     cmd = ["markery", "matchmaker", "seed-pairs", "--years"] + [str(y) for y in years] + ["--json"]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     out = result.stdout.strip()
-    try:
-        return json.loads(out.splitlines()[-1]) if out else []
-    except (json.JSONDecodeError, IndexError):
+    if not out:
         return []
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        try:
+            return json.loads(out.splitlines()[-1])
+        except (json.JSONDecodeError, IndexError):
+            return []
 
 
 def run_project_init(slug: str, ptype: str = "match-review-essay") -> bool:

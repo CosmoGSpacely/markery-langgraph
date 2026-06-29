@@ -103,7 +103,8 @@ def pick_next(state: DiscoveryState) -> DiscoveryState:
 def score(state: DiscoveryState) -> DiscoveryState:
     cur = state["current"]
     result = tools.run_relevance(state["project"], cur.get("title", ""))
-    cur["score"] = int(result.get("score", 0))
+    raw = result.get("score")
+    cur["score"] = int(raw) if raw is not None else 0   # model outage → unscored (0)
     cur["reasoning"] = result.get("reasoning", "")
     _log(state, f"score {cur['score']}/5 — {cur.get('title','')[:50]}")
     return state

@@ -158,35 +158,44 @@ def _discover_preview(state: SpawnState, project: str, seeds: list[str]) -> dict
     (not gated inline). Media/newspapers/images are acquired under the fair-use policy
     and referenced into the project. Returns per-kind counters."""
     floor = state["relevance_floor"]
-    counts = {"books": 0, "media": 0, "ill_queued": 0}
+    counts = {"books": 0, "media": 0, "ill_queued": 0, "unscored": 0}
     for seed in seeds:
         for b in tools.run_books(seed, max_results=_BOOKS_PER_SEED):
-            score = int(tools.run_relevance(project, b.get("title", "")).get("score", 0))
-            if score < floor:
-                tools.run_leads_add("openlibrary", (b.get("title") or "x")[:60],
-                                    title=b.get("title", ""), project=project,
-                                    relevance=score, status="dropped")
-                continue
-            if b.get("action") == "acquire" and b.get("ia_id"):
-                if tools.run_acquire_text(b["ia_id"]):
-                    counts["books"] += 1
-                tools.run_leads_add("openlibrary", b["ia_id"], title=b.get("title", ""),
-                                    project=project, relevance=score, status="acquired")
-            else:   # ILL — queue a want, do not gate inline
-                tools.run_wants_add(b.get("title", ""), author=b.get("author", ""),
-                                    year=b.get("year"), isbn=b.get("isbn"),
-                                    ill_request=b.get("ill_request", ""))
-                counts["ill_queued"] += 1
+            try:
+                score = tools.run_relevance(project, b.get("title", "")).get("score")
+                if score is None:           # model unavailable → skip, don't acquire blind
+                    counts["unscored"] += 1
+                    continue
+                if int(score) < floor:
+                    tools.run_leads_add("openlibrary", (b.get("title") or "x")[:60],
+                                        title=b.get("title", ""), project=project,
+                                        relevance=score, status="dropped")
+                    continue
+                if b.get("action") == "acquire" and b.get("ia_id"):
+                    if tools.run_acquire_text(b["ia_id"]):
+                        counts["books"] += 1
+                    tools.run_leads_add("openlibrary", b["ia_id"], title=b.get("title", ""),
+                                        project=project, relevance=score, status="acquired")
+                else:   # ILL — queue a want, do not gate inline
+                    tools.run_wants_add(b.get("title", ""), author=b.get("author", ""),
+                                        year=b.get("year"), isbn=b.get("isbn"),
+                                        ill_request=b.get("ill_request", ""))
+                    counts["ill_queued"] += 1
+            except Exception as exc:        # one bad item never aborts the pass
+                _log(state, f"book skip ({b.get('title','')[:30]}): {str(exc)[:60]}")
         for src in state.get("media_sources", _DEFAULT_MEDIA_SOURCES):
             for hit in tools.run_media_search(seed, source=src, max_results=_MEDIA_PER_SOURCE):
-                res = tools.run_media_acquire(hit["source"], hit["id"], fair_use=True)
-                if res.get("acquired"):
-                    if res.get("slug"):
-                        tools.run_use(res["slug"], project)
-                    counts["media"] += 1
-                tools.run_leads_add(hit["source"], hit["id"], project=project,
-                                    status="acquired" if res.get("acquired") else "logged",
-                                    note=f"media {res.get('license','')}".strip())
+                try:
+                    res = tools.run_media_acquire(hit["source"], hit["id"], fair_use=True)
+                    if res.get("acquired"):
+                        if res.get("slug"):
+                            tools.run_use(res["slug"], project)
+                        counts["media"] += 1
+                    tools.run_leads_add(hit["source"], hit["id"], project=project,
+                                        status="acquired" if res.get("acquired") else "logged",
+                                        note=f"media {res.get('license','')}".strip())
+                except Exception as exc:
+                    _log(state, f"media skip ({hit.get('id','')}): {str(exc)[:60]}")
     return counts
 
 
