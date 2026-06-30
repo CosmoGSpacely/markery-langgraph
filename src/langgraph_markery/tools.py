@@ -311,6 +311,17 @@ def run_match(slug: str) -> bool:
     return result.returncode == 0
 
 
+def run_scaffold(project: str, slug: str) -> bool:
+    """Generate the essay skeleton for a confirmed pair (markery historian scaffold).
+
+    Deterministic (no model) — must run before `draft` fills the prose."""
+    result = subprocess.run(
+        ["markery", "historian", "scaffold", project, slug],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
 def run_site_build(slug: str) -> bool:
     """Build a project's local site preview (markery site build <slug>)."""
     result = subprocess.run(["markery", "site", "build", slug], capture_output=True, text=True)

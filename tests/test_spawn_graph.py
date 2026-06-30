@@ -44,6 +44,7 @@ def _patches(**extra):
         "run_wants_add": MagicMock(),
         "run_leads_add": MagicMock(),
         "run_confirm": MagicMock(return_value=None),
+        "run_scaffold": MagicMock(return_value=True),
         "run_draft": MagicMock(return_value=("drafted", True)),
         "run_site_build": MagicMock(return_value=True),
     }

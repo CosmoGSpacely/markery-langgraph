@@ -200,14 +200,20 @@ def _discover_preview(state: SpawnState, project: str, seeds: list[str]) -> dict
 
 
 def _auto_draft(state: SpawnState, project: str, top_pairs: list[dict]) -> bool:
-    """Best-effort: confirm the strongest seed pair and draft its essay (free model)."""
+    """Best-effort: confirm the strongest seed pair, scaffold it, then draft the
+    essay (free model). Tries successive pairs until one confirms; scaffold is
+    deterministic and required before draft."""
     for p in top_pairs:
         slug = f"{_slugify(p['mark'])}-{p['patent_no'].lower()}"
         try:
             tools.run_confirm(project, slug, note="auto-spawned preview seed")
         except Exception:
+            continue                      # pair not a confirmable candidate; try next
+        if not tools.run_scaffold(project, slug):
             continue
-        _, ok = tools.run_draft(project, slug)
+        _, ok = tools.run_draft(project, slug)   # draft degrades to ok=False on model outage
+        if ok:
+            _log(state, f"essay drafted: {slug}")
         return ok
     return False
 
