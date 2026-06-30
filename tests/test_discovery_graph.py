@@ -104,6 +104,24 @@ def test_media_branch_acquires_and_uses(tmp_path):
     assert mocks["run_leads_add"].call_args.args[0] == "commons"
 
 
+def test_model_outage_logs_unscored_not_dropped(tmp_path):
+    """D077: when the whole free model chain is down (relevance score None), items
+    are logged 'unscored' (re-scored on a later tick), never terminally 'dropped'."""
+    mocks = _patches(run_relevance=MagicMock(return_value={"score": None, "error": "429"}))
+    graph = build_graph(MemorySaver())
+    thread = {"configurable": {"thread_id": "disc-outage"}}
+    with (
+        patch("langgraph_markery.discovery_graph.config.resolve_markery_root",
+              return_value=str(tmp_path)),
+        patch.multiple("langgraph_markery.discovery_graph.tools", **mocks),
+    ):
+        list(graph.stream(initial_state("tools", relevance_floor=3), config=thread))
+    final = graph.get_state(thread).values
+    assert final["acquired"] == 0                          # nothing acquired blind
+    statuses = [c.kwargs.get("status") for c in mocks["run_leads_add"].call_args_list]
+    assert statuses and all(s == "unscored" for s in statuses)   # not 'dropped'
+
+
 def test_ill_skip_drops_instead_of_queue(tmp_path):
     mocks = _patches()
     graph = build_graph(MemorySaver())

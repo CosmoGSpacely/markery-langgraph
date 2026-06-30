@@ -104,9 +104,14 @@ def score(state: DiscoveryState) -> DiscoveryState:
     cur = state["current"]
     result = tools.run_relevance(state["project"], cur.get("title", ""))
     raw = result.get("score")
-    cur["score"] = int(raw) if raw is not None else 0   # model outage → unscored (0)
-    cur["reasoning"] = result.get("reasoning", "")
-    _log(state, f"score {cur['score']}/5 — {cur.get('title','')[:50]}")
+    # D077: the model chain is exhausted only when every free model is down. Mark
+    # such items 'unscored' (not 'dropped') — a later tick re-discovers and re-scores
+    # them once a model is available, so nothing is permanently lost on an outage.
+    cur["unscored"] = raw is None
+    cur["score"] = int(raw) if raw is not None else 0
+    cur["reasoning"] = result.get("reasoning", "") if raw is not None else "model unavailable"
+    label = "unscored (model down)" if cur["unscored"] else f"score {cur['score']}/5"
+    _log(state, f"{label} — {cur.get('title','')[:50]}")
     return state
 
 
@@ -178,12 +183,15 @@ def queue_ill(state: DiscoveryState) -> DiscoveryState:
 
 def log_dropped(state: DiscoveryState) -> DiscoveryState:
     cur = state["current"]
+    # An item the model couldn't score (whole free chain down) is logged 'unscored'
+    # so it is re-scored on a later tick, not treated as a terminal rejection.
+    status = "unscored" if cur.get("unscored") else "dropped"
     tools.run_leads_add("openlibrary", _lead_id(cur), title=cur.get("title", ""),
                         project=state["project"], relevance=cur.get("score"),
-                        status="dropped", note=cur.get("reasoning", "")[:120])
+                        status=status, note=cur.get("reasoning", "")[:120])
     state["decision_override"] = None
     state["logged"] += 1
-    _log(state, f"dropped: {cur.get('title','')[:50]}")
+    _log(state, f"{status}: {cur.get('title','')[:50]}")
     return state
 
 
