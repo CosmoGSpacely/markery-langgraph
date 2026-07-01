@@ -99,17 +99,18 @@ def run_confirm(
     subprocess.run(cmd, capture_output=True, text=True, check=True)
 
 
-def run_draft(project: str, slug: str) -> tuple[str, bool]:
-    """Run `markery historian draft <project> <slug>`.
+def run_draft(project: str, slug: str, publish: bool = False) -> tuple[str, bool]:
+    """Run `markery historian draft <project> <slug> [--publish]`.
 
     Returns (stdout, validate_passed) where validate_passed is True when the
     command exits 0 (draft written and immediately validated by the historian).
-    stdout contains the draft path and validation summary.
+    With publish=True, a validated draft is promoted to the published essay
+    (content/<slug>.md) that the site renders — used for spawn preview essays.
     """
-    result = subprocess.run(
-        ["markery", "historian", "draft", project, slug],
-        capture_output=True, text=True,
-    )
+    cmd = ["markery", "historian", "draft", project, slug]
+    if publish:
+        cmd.append("--publish")
+    result = subprocess.run(cmd, capture_output=True, text=True)
     validate_passed = result.returncode == 0
     return result.stdout + result.stderr, validate_passed
 

@@ -86,7 +86,9 @@ def test_batch_gate_spawns_only_approved(tmp_path):
     mocks["run_project_init"].assert_called_once_with("acme-co")
     mocks["run_match"].assert_called_once_with("acme-co")
     mocks["run_site_build"].assert_called_once_with("acme-co")
-    mocks["run_draft"].assert_called_once()                  # essay auto-drafted
+    # essay auto-drafted AND published (so the site renders it, not the scaffold)
+    mocks["run_draft"].assert_called_once()
+    assert mocks["run_draft"].call_args.kwargs.get("publish") is True
 
 
 def test_dedup_ledger_skips_spawned(tmp_path):

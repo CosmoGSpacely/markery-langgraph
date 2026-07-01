@@ -211,9 +211,10 @@ def _auto_draft(state: SpawnState, project: str, top_pairs: list[dict]) -> bool:
             continue                      # pair not a confirmable candidate; try next
         if not tools.run_scaffold(project, slug):
             continue
-        _, ok = tools.run_draft(project, slug)   # draft degrades to ok=False on model outage
+        # publish=True promotes the validated draft to the essay the site renders.
+        _, ok = tools.run_draft(project, slug, publish=True)   # ok=False on model outage
         if ok:
-            _log(state, f"essay drafted: {slug}")
+            _log(state, f"essay drafted + published: {slug}")
         return ok
     return False
 
